@@ -22,6 +22,8 @@ var server = http.createServer(function (request, response) {
 
   /******** 从这里开始看，上面不要看 ************/
 
+  const session = JSON.parse(fs.readFileSync("./session.json"));
+
   console.log("有个傻子发请求过来啦！路径（带查询参数）为：" + pathWithQuery);
 
   if (path === "/sign_in" && method === "POST") {
@@ -42,35 +44,48 @@ var server = http.createServer(function (request, response) {
       if (user === undefined) {
         response.statusCode = 400;
         response.setHeader("Content-Type", "text/json;charset=utf-8");
-        // response.end(`{"errorCode":4001}`); // 每个公司都应该要有一个自己的errorCode编码
+        response.end(`{"errorCode":4001}`); // 每个公司都应该要有一个自己的errorCode编码
       } else {
         response.statusCode = 200;
-        response.setHeader("Set-Cookie", `user_id=${user.id};HttpOnly`); // 设置cookie，HttpOnly可让前端无法操作cookie
+
+        // 设置cookie，HttpOnly用于阻止Js通过Document.cookie访问cookie
+        // response.end()要在end事件回调里做的.否则response.end()执行早于end事件回调，response.setHeader就会报错
+        // response.setHeader("Set-Cookie", `user_id=${user.id}; HttpOnly`);
+
+        // 产生随机id，存储在session.json文件中
+        const random = Math.random();
+        session[random] = { user_id: user.id };
+        fs.writeFileSync("./session.json", JSON.stringify(session));
+        response.setHeader("Set-Cookie", `session_id=${random}; HttpOnly`);
+        response.end();
       }
     });
   } else if (path === "/home.html") {
     // 获取cookie,用法可查阅node.js中文文档
     const cookie = request.headers["cookie"];
 
-    // 从cookie中获取user_id
-    let userId;
+    // 从cookie中获取sessionId
+    let sessionId;
     try {
-      userId = cookie
+      sessionId = cookie
         .split(";")
-        .filter((string) => string.indexOf("user_id=") >= 0)[0]
+        .filter((string) => string.indexOf("session_id=") >= 0)[0]
         .split("=")[1];
     } catch (error) {}
 
-    if (userId) {
+    if (sessionId && session[sessionId]) {
+      const userId = session[sessionId].user_id;
+      console.log(typeof userId);
       const userArray = JSON.parse(fs.readFileSync("./db/users.json"));
-      const user = userArray.find((user) => user.id.toString() === userId); // 在数据库中匹配这个user_id
+
+      // 在数据库中匹配这个userId
+      const user = userArray.find((user) => user.id === userId); // 这里的userId是number类型
       const homeHtml = fs.readFileSync("./public/home.html").toString();
-      let string;
+      let string = ""; //string必须为字符串类型，否则response.write(string);会报错
       if (user) {
         string = homeHtml
           .replace("{{loginStatus}}", "已登录")
           .replace("{{user.name}}", user.name);
-      } else {
       }
       response.write(string);
     } else {
@@ -80,6 +95,7 @@ var server = http.createServer(function (request, response) {
         .replace("{{user.name}}", "");
       response.write(string);
     }
+    response.end();
   } else if (path === "/register" && method === "POST") {
     response.setHeader("Content-Type", "text/html;charset=utf-8");
 
@@ -108,6 +124,7 @@ var server = http.createServer(function (request, response) {
 
       userArray.push(newUser);
       fs.writeFileSync("./db/users.json", JSON.stringify(userArray));
+      response.end();
     });
   } else {
     response.statusCode = 200;
@@ -137,8 +154,8 @@ var server = http.createServer(function (request, response) {
       response.statusCode = 404;
     }
     response.write(content);
+    response.end();
   }
-  response.end();
 
   /******** 代码结束，下面不要看 ************/
 });
