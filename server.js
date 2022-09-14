@@ -75,7 +75,6 @@ var server = http.createServer(function (request, response) {
 
     if (sessionId && session[sessionId]) {
       const userId = session[sessionId].user_id;
-      console.log(typeof userId);
       const userArray = JSON.parse(fs.readFileSync("./db/users.json"));
 
       // 在数据库中匹配这个userId
